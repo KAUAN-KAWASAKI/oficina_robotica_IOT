@@ -1,71 +1,81 @@
 (function(){
-  const key = document.body.dataset.form;
-  const F = window.FORMS[key];
-  const root = document.getElementById("app");
-  const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  const L = ["1","2","3","4","5"];
-  let h = `<h1>${esc(F.title)}</h1><p class="sub">${esc(F.subtitle)}</p>
-  <form id="f" novalidate>
-  <fieldset class="card consent"><legend>Termo de consentimento</legend><p>${esc(F.consent)}</p>
-  <label class="chk"><input type="checkbox" name="consentimento" required> Li e concordo em participar.</label></fieldset>`;
-  F.blocks.forEach(b=>{
-    h += `<section class="card"><h2>${esc(b.title)}</h2>${b.desc?`<p class="desc">${esc(b.desc)}</p>`:""}`;
-    b.questions.forEach(q=>{
-      const req = q.required ? " required" : "";
-      if(q.type==="text"){
-        h += `<div class="q"><label for="${q.id}">${esc(q.label)}${q.required?" *":""}</label>${q.help?`<p class="help">${esc(q.help)}</p>`:""}
-        <input id="${q.id}" name="${q.id}" type="text" autocomplete="off"${req}${q.pattern?` pattern="${q.pattern}"`:""}></div>`;
-      } else if(q.type==="textarea"){
-        h += `<div class="q"><label for="${q.id}">${esc(q.label)}</label><textarea id="${q.id}" name="${q.id}" rows="3"></textarea></div>`;
-      } else if(q.type==="radio"){
-        h += `<div class="q"><p class="lbl">${esc(q.label)}${q.required?" *":""}</p>`+
-          q.options.map((o,i)=>`<label class="opt"><input type="radio" name="${q.id}" value="${esc(o)}"${i===0&&q.required?" required":""}> ${esc(o)}</label>`).join("")+`</div>`;
-      } else if(q.type==="likert"){
-        h += `<div class="likert">`+q.items.map(it=>`<div class="q"><p class="lbl">${esc(it[0])}. ${esc(it[1])}</p><div class="scale">`+
-          L.map((v,i)=>`<label><input type="radio" name="${it[0]}" value="${v}"${i===0?" required":""}><span>${v}</span></label>`).join("")+`</div></div>`).join("")+`</div>`;
-      } else if(q.type==="nps"){
-        h += `<div class="q"><p class="lbl">${esc(q.label)} *</p><div class="scale nps">`+
-          Array.from({length:11},(_,i)=>`<label><input type="radio" name="${q.id}" value="${i}"${i===0?" required":""}><span>${i}</span></label>`).join("")+`</div></div>`;
-      }
-    });
-    h += `</section>`;
-  });
-  h += `<button type="submit" id="send">Enviar respostas</button><p id="msg" role="status"></p></form>`;
-  root.innerHTML = h;
+  const key=document.body.dataset.form, F=window.FORMS[key], root=document.getElementById("app");
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const ans={}, hist=[];
+  // pós: preenche o código salvo neste aparelho (do formulário inicial)
+  let saved=""; try{saved=localStorage.getItem("oficina_codigo")||""}catch(_){}
+  if(key==="pos"&&saved) ans.codigo=saved;
+  let steps=[{type:"intro"}].concat(F.steps), i=0;
+  const shell=inner=>`<div class="brand"><i></i>UEPA · Semana Acadêmica</div><div class="panel fade">${inner}</div>`;
+  const prog=()=>{const n=steps.length-1;return `<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${i}"><b style="width:${i/n*100}%"></b></div><div class="count">${i} de ${n}</div>`};
+  const nav=(canBack,label,extra)=>`<div class="nav">${canBack?`<button type="button" class="ghost" id="back">Voltar</button>`:""}${extra||""}<button type="button" class="go" id="next">${label||"Continuar"}</button></div>`;
 
-  const form = document.getElementById("f"), msg = document.getElementById("msg");
-  form.addEventListener("submit", async e=>{
-    e.preventDefault();
-    if(!form.checkValidity()){ form.reportValidity(); return; }
-    const fd = new FormData(form), data = {};
-    for(const [k,v] of fd.entries()) data[k]=v;
-    data.consentimento = "sim";
-    if(data.codigo) data.codigo = data.codigo.toUpperCase();
-    const payload = {formulario:key, enviado_em:new Date().toISOString(), ...data};
-    try{
-      const all = JSON.parse(localStorage.getItem("oficina_"+key)||"[]"); all.push(payload);
-      localStorage.setItem("oficina_"+key, JSON.stringify(all));
-    }catch(_){}
-    const btn = document.getElementById("send"); btn.disabled = true;
-    let enviado = false;
-    if(window.ENDPOINT){
-      try{
-        await fetch(window.ENDPOINT,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
-        enviado = true;
-      }catch(_){}
+  function show(){
+    const s=steps[i]; let h="";
+    if(s.type==="intro"){
+      h=`<h1>${esc(F.title)}</h1><p class="sub">${esc(F.subtitle)}</p><p>${esc(F.intro)}</p>
+      <p class="hint">Ao continuar, você concorda em participar.</p><div class="nav"><button type="button" class="go" id="next">Começar</button></div>`;
+    } else if(s.type==="text"){
+      h=prog()+`<h2>${esc(s.title)}</h2><p class="help">${esc(s.help||"")}</p>
+      <input id="in" type="text" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC12" value="${esc(ans[s.id]||"")}">
+      <p class="err" id="err" role="alert"></p>${nav(i>1)}`;
+    } else if(s.type==="radio"){
+      h=prog()+(s.tag?`<span class="tag">${esc(s.tag)}</span>`:"")+`<h2>${esc(s.title)}</h2><div class="opts" role="radiogroup">`+
+        s.options.map(o=>`<label class="opt"><input type="radio" name="r" value="${esc(o)}"${ans[s.id]===o?" checked":""}><span>${esc(o)}</span></label>`).join("")+`</div>${nav(i>1,"Continuar")}`;
+    } else if(s.type==="likert"){
+      h=prog()+`<h2>${esc(s.title)}</h2><p class="hint">${esc(s.hint)}</p>`+s.items.map(it=>`<div class="row"><p>${esc(it[1])}</p><div class="scale">`+
+        [1,2,3,4,5].map(v=>`<label class="opt"><input type="radio" name="${it[0]}" value="${v}"${ans[it[0]]==v?" checked":""}><span>${v}</span></label>`).join("")+
+        `</div></div>`).join("")+`${nav(true)}`;
+    } else if(s.type==="textarea"){
+      h=prog()+`<h2>${esc(s.title)}</h2><textarea id="in" rows="4" placeholder="${esc(s.placeholder||"")}">${esc(ans[s.id]||"")}</textarea>
+      ${nav(true,i===steps.length-1?"Enviar":"Continuar")}`;
     }
-    form.innerHTML = `<section class="card done"><h2>Obrigado!</h2>
-      <p>${enviado ? "Suas respostas foram enviadas." : (window.ENDPOINT ? "Não foi possível enviar agora. Baixe o arquivo abaixo e entregue ao ministrante." : "Respostas salvas neste aparelho.")}</p>
-      ${enviado?"":`<button type="button" id="dl">Baixar minhas respostas (CSV)</button>`}</section>`;
-    const dl = document.getElementById("dl");
-    if(dl) dl.onclick = ()=>{
-      const keys = Object.keys(payload);
-      const q = v => '"'+String(v).replace(/"/g,'""')+'"';
-      const csv = keys.map(q).join(",")+"\n"+keys.map(k=>q(payload[k])).join(",");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv"}));
-      a.download = "respostas_"+key+".csv"; a.click();
-    };
-    window.scrollTo({top:0,behavior:"smooth"});
-  });
+    root.innerHTML=shell(h); bind(s);
+    const f=root.querySelector("#in"); if(f&&s.type==="text") f.focus();
+  }
+
+  function go(d){ if(d>0){hist.push(i);i++} else {i=hist.pop()??Math.max(0,i-1)} 
+    // pula o código no pós se já veio preenchido
+    if(i>=steps.length) return finish();
+    if(key==="pos"&&steps[i].id==="codigo"&&ans.codigo&&d>0){hist.push(i);i++} show(); window.scrollTo(0,0); }
+
+  function bind(s){
+    const next=document.getElementById("next"), back=document.getElementById("back");
+    if(back) back.onclick=()=>go(-1);
+    if(s.type==="intro"){next.onclick=()=>go(1);return}
+    if(s.type==="text"){
+      const inp=document.getElementById("in"),err=document.getElementById("err");
+      const ok=()=>{ans[s.id]=inp.value.trim().toUpperCase();
+        if(!new RegExp(s.pattern).test(ans[s.id])){err.textContent="Use 3 letras e 2 números, por exemplo ABC12.";return false}
+        err.textContent="";return true};
+      next.onclick=()=>{if(ok()){try{localStorage.setItem("oficina_codigo",ans[s.id])}catch(_){}go(1)}};
+      inp.addEventListener("keydown",e=>{if(e.key==="Enter")next.click()});
+    } else if(s.type==="radio"){
+      next.disabled=!ans[s.id];
+      root.querySelectorAll("input[name=r]").forEach(r=>r.onchange=()=>{ans[s.id]=r.value;next.disabled=false;setTimeout(()=>go(1),280)});
+      next.onclick=()=>go(1);
+    } else if(s.type==="likert"){
+      const chk=()=>{next.disabled=!s.items.every(it=>ans[it[0]])};chk();
+      root.querySelectorAll("input[type=radio]").forEach(r=>r.onchange=()=>{ans[r.name]=r.value;chk()});
+      next.onclick=()=>go(1);
+    } else if(s.type==="textarea"){
+      const ta=document.getElementById("in");
+      next.onclick=()=>{ans[s.id]=ta.value.trim();go(1)};
+    }
+  }
+
+  async function finish(){
+    const payload=Object.assign({formulario:key,enviado_em:new Date().toISOString(),consentimento:"sim"},ans);
+    try{const all=JSON.parse(localStorage.getItem("oficina_"+key)||"[]");all.push(payload);localStorage.setItem("oficina_"+key,JSON.stringify(all))}catch(_){}
+    root.innerHTML=shell(`<h2>Enviando…</h2>`);
+    let sent=false;
+    if(window.ENDPOINT){try{await fetch(window.ENDPOINT,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});sent=true}catch(_){}}
+    const msg=sent?"Suas respostas foram enviadas.":(window.ENDPOINT?"Não deu para enviar agora. Baixe o arquivo e entregue ao ministrante.":"Respostas salvas neste aparelho.");
+    root.innerHTML=shell(`<h1>Obrigado!</h1><p>${msg}</p>`+(key==="pre"?`<p class="hint">Seu código é <strong>${esc(ans.codigo)}</strong>. Anote: você vai usá-lo no formulário final.</p>`:"")+
+      (sent?"":`<div class="nav"><button type="button" class="go" id="dl">Baixar minhas respostas (CSV)</button></div>`));
+    const dl=document.getElementById("dl");
+    if(dl)dl.onclick=()=>{const k=Object.keys(payload),q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+      const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+k.map(q).join(",")+"\n"+k.map(x=>q(payload[x])).join(",")],{type:"text/csv"}));a.download="respostas_"+key+".csv";a.click()};
+  }
+  show();
 })();

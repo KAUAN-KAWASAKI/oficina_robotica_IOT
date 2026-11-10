@@ -5,7 +5,7 @@ import csv, sys
 from statistics import mean, stdev
 GAB = {"C1": "Um microcontrolador com Wi-Fi e Bluetooth", "C2": "Objetos físicos conectados que coletam e trocam dados",
        "C3": "Converter uma grandeza física em sinal elétrico", "C4": "Limitar a corrente"}
-A = [f"A{i}" for i in range(1, 8)]
+A = [f"A{i}" for i in range(1, 7)]
 def ler(p):
     with open(p, encoding="utf-8-sig", newline="") as f:
         return {r["codigo"].strip().upper(): r for r in csv.DictReader(f) if r.get("codigo")}
@@ -15,7 +15,7 @@ pre, pos = ler(sys.argv[1]), ler(sys.argv[2])
 pares = sorted(set(pre) & set(pos))
 print(f"Respostas pre: {len(pre)} | pos: {len(pos)} | pareadas: {len(pares)}")
 if not pares: sys.exit("Nenhum codigo em comum.")
-print("\nAutoavaliacao (media A1-A7, escala 1-5)")
+print("\nAutoavaliacao (media A1-A6, escala 1-5)")
 for k in A:
     a, b = [mean(float(d[c][k]) for c in pares) for d in (pre, pos)]
     print(f"  {k}: pre {a:.2f} -> pos {b:.2f} ({b-a:+.2f})")
@@ -29,8 +29,6 @@ for k in GAB:
 ta, tb = [mean(acertos(d[c]) for c in pares) for d in (pre, pos)]
 print(f"  Media de acertos (0-4): pre {ta:.2f} -> pos {tb:.2f}")
 print("\nSatisfacao (pos, todas as respostas)")
-for k in [f"S{i}" for i in range(1, 8)]:
+for k in [f"S{i}" for i in range(1, 5)]:
     v = [float(r[k]) for r in pos.values() if r.get(k)]
     if v: print(f"  {k}: media {mean(v):.2f}")
-n = [int(r["nps"]) for r in pos.values() if r.get("nps", "") != ""]
-if n: print(f"  NPS: {100*(sum(x>=9 for x in n)-sum(x<=6 for x in n))/len(n):.0f}")
