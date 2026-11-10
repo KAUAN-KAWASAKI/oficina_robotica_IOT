@@ -25,7 +25,7 @@
     } else if(s.type==="likert"){
       h=prog()+`<h2>${esc(s.title)}</h2><p class="hint">${esc(s.hint)}</p>`+s.items.map(it=>`<div class="row"><p>${esc(it[1])}</p><div class="scale">`+
         [1,2,3,4,5].map(v=>`<label class="opt"><input type="radio" name="${it[0]}" value="${v}"${ans[it[0]]==v?" checked":""}><span>${v}</span></label>`).join("")+
-        `</div></div>`).join("")+`${nav(true)}`;
+        `</div><div class="ends"><span>${esc(s.ends[0])}</span><span>${esc(s.ends[1])}</span></div></div>`).join("")+`${nav(true)}`;
     } else if(s.type==="textarea"){
       h=prog()+`<h2>${esc(s.title)}</h2><textarea id="in" rows="4" placeholder="${esc(s.placeholder||"")}">${esc(ans[s.id]||"")}</textarea>
       ${nav(true,i===steps.length-1?"Enviar":"Continuar")}`;
@@ -48,7 +48,22 @@
       const ok=()=>{ans[s.id]=inp.value.trim().toUpperCase();
         if(!new RegExp(s.pattern).test(ans[s.id])){err.textContent="Use 3 letras e 2 números, por exemplo ABC12.";return false}
         err.textContent="";return true};
-      next.onclick=()=>{if(ok()){try{localStorage.setItem("oficina_codigo",ans[s.id])}catch(_){}go(1)}};
+      let avisou=false;
+      next.onclick=async()=>{
+        if(!ok())return;
+        if(window.ENDPOINT){
+          next.disabled=true;next.textContent="Verificando…";
+          try{
+            const r=await fetch(window.ENDPOINT+"?check="+encodeURIComponent(ans[s.id])+"&f=pre");
+            const j=await r.json();
+            if(key==="pre"&&j.existe){err.textContent="Esse código já foi usado por outra pessoa. Crie outro, por exemplo mudando os números.";next.disabled=false;next.textContent="Continuar";return}
+            if(key==="pos"&&!j.existe&&!avisou){avisou=true;err.textContent="Não encontramos esse código no formulário inicial. Confira o código que você anotou ou toque em Continuar para seguir assim mesmo.";next.disabled=false;next.textContent="Continuar";return}
+          }catch(_){}
+          next.disabled=false;next.textContent="Continuar";
+        }
+        try{localStorage.setItem("oficina_codigo",ans[s.id])}catch(_){}
+        go(1);
+      };
       inp.addEventListener("keydown",e=>{if(e.key==="Enter")next.click()});
     } else if(s.type==="radio"){
       next.disabled=!ans[s.id];
@@ -65,11 +80,24 @@
   }
 
   async function finish(){
-    const payload=Object.assign({formulario:key,enviado_em:new Date().toISOString(),consentimento:"sim"},ans);
+    const payload=Object.assign({formulario:key,id_envio:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random()),enviado_em:new Date().toISOString(),consentimento:"sim"},ans);
     try{const all=JSON.parse(localStorage.getItem("oficina_"+key)||"[]");all.push(payload);localStorage.setItem("oficina_"+key,JSON.stringify(all))}catch(_){}
     root.innerHTML=shell(`<h2>Enviando…</h2>`);
     let sent=false;
-    if(window.ENDPOINT){try{await fetch(window.ENDPOINT,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});sent=true}catch(_){}}
+    if(window.ENDPOINT){
+      const body=JSON.stringify(payload);
+      try{
+        const r=await fetch(window.ENDPOINT,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body});
+        const j=await r.json();
+        if(j.codigo_em_uso){ // alguém criou o mesmo código no intervalo
+          const idx=steps.findIndex(x=>x.id==="codigo"); delete ans.codigo; try{localStorage.removeItem("oficina_codigo")}catch(_){}
+          i=idx; show(); const e=document.getElementById("err"); if(e)e.textContent="Esse código acabou de ser usado por outra pessoa. Crie outro."; return;
+        }
+        sent=!!j.ok;
+      }catch(_){
+        try{await fetch(window.ENDPOINT,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body});sent=true}catch(__){}
+      }
+    }
     const msg=sent?"Suas respostas foram enviadas.":(window.ENDPOINT?"Não deu para enviar agora. Baixe o arquivo e entregue ao ministrante.":"Respostas salvas neste aparelho.");
     root.innerHTML=shell(`<h1>Obrigado!</h1><p>${msg}</p>`+(key==="pre"?`<p class="hint">Seu código é <strong>${esc(ans.codigo)}</strong>. Anote: você vai usá-lo no formulário final.</p>`:"")+
       (sent?"":`<div class="nav"><button type="button" class="go" id="dl">Baixar minhas respostas (CSV)</button></div>`));
