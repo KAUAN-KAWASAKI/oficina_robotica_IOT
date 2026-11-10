@@ -1,4 +1,1 @@
-// Cole aqui a URL do seu Google Apps Script (veja o README.md).
-// Se ficar vazio, as respostas ficam salvas só no navegador de quem respondeu
-// e a pessoa pode baixar um CSV ao final.
-window.ENDPOINT = "";
+window.ENDPOINT = "https://script.google.com/macros/s/AKfycbzlczdPoOqqcUL3F6XRY6zYXUgqTGd2vFNc7v7Uf2HLc6Ek1LSWLQuUvfWB-ZCVzrQg3g/exec";

@@ -1,8 +1,17 @@
-// Cole em script.google.com (projeto criado a partir de uma Planilha Google: Extensões > Apps Script).
+// Cole em script.google.com (Novo projeto). A planilha de respostas e criada sozinha na primeira execucao:
+// rode a funcao autorizar() uma vez e aprove as permissoes.
 // Implantar > Nova implantação > App da Web > Executar como: Eu > Acesso: Qualquer pessoa.
 // Cada formulário vira uma aba ("pre" e "pos"). Códigos repetidos no inicial são recusados.
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-function aba_(nome) { var ss = SpreadsheetApp.getActiveSpreadsheet(); return ss.getSheetByName(nome) || ss.insertSheet(nome); }
+function ss_() {
+  var p = PropertiesService.getScriptProperties(), id = p.getProperty("SSID");
+  if (id) return SpreadsheetApp.openById(id);
+  var s = SpreadsheetApp.create("Respostas - Oficina de Robotica e IoT");
+  p.setProperty("SSID", s.getId());
+  return s;
+}
+function aba_(nome) { var ss = ss_(); return ss.getSheetByName(nome) || ss.insertSheet(nome); }
+function autorizar() { aba_("pre"); aba_("pos"); }
 function existe_(nome, coluna, valor) {
   var sh = aba_(nome); if (sh.getLastRow() < 2) return false;
   var h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0], c = h.indexOf(coluna); if (c < 0) return false;
